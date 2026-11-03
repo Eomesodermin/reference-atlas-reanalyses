@@ -1,0 +1,848 @@
+---
+title: "Seurat_PBMC_Multimodal_dataset_NKG7"
+author: "Dillon Corvino"
+date: "30/03/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# CITEseq reference of 162,000 PBMCs measured with 228 antibodies 
+
+
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+setwd(here::here())   # project root; works in RStudio, knitr and Rscript
+
+# Load packages
+source("R/Load_packages.R", local = knitr::knit_global())
+
+# Create output directories & load custom functions & colour scheme
+source("R/Setup.R", local = knitr::knit_global())
+
+```
+
+### Read and format data
+```{r reading_data}
+
+reference <- LoadH5Seurat("Data/pbmc_multimodal.h5seurat")
+
+# there are also 3 and 7 days post HIV vaccination
+DimPlot(reference, split.by = "time", reduction = "wnn.umap", group.by = "celltype.l2") 
+
+
+
+# Remove post vaccination timepoints
+Idents(reference) <- reference@meta.data$time
+
+reference <- subset(reference, ident = "0")
+
+unique(reference@meta.data$time)
+
+Idents(reference) <- reference@meta.data$celltype.l1
+
+
+```
+
+### Define cytotoxicity markers
+```{r Cytotoxicity_markers}
+
+cytotoxic.markers <- c("GNLY", "PRF1", "GZMA", "GZMB", "GZMK", "GZMM", "GZMH") 
+
+```
+
+### Visualising NKG7 expression
+```{r Visualising_NKG7}
+
+if(!dir.exists("output/figures/NKG7_Expression")){
+  dir.create("output/figures/NKG7_Expression", 
+             recursive = T)}
+
+
+head(reference@meta.data)
+
+
+p1 <- DimPlot(object = reference, 
+              reduction = "wnn.umap",
+              group.by = "celltype.l2",
+              label = TRUE, 
+              label.size = 3, 
+              repel = TRUE) + NoLegend()
+
+p1
+dev.copy(pdf, "output/figures/NKG7_Expression/WNN_UMAP_subset_annotation.pdf")
+dev.off()
+
+
+NKG7 <- FeaturePlot(reference,
+                    "NKG7",
+                    reduction = "wnn.umap",
+                    order = TRUE)
+
+NKG7
+dev.copy(pdf, "output/figures/NKG7_Expression/WNN_UMAP_NKG7_Expression.pdf")
+dev.off()
+
+p1 + NKG7
+
+dev.copy(pdf, "output/figures/NKG7_Expression/WNN_UMAP_subset_annotation_and_NKG7_Expression.pdf")
+dev.off()
+
+
+Nebulosa::plot_density(reference, 
+                       features = "NKG7", 
+                       reduction = "wnn.umap")
+
+dev.copy(pdf, "output/figures/NKG7_Expression/WNN_UMAP_NKG7_Expression_density.pdf")
+dev.off()
+
+
+
+####################################################################################
+# loop through a number of cytotoxicity markers and plot expression pattern 
+####################################################################################
+
+for(i in seq_along(cytotoxic.markers)){
+
+  
+  temp.plot <- FeaturePlot(reference,
+                         cytotoxic.markers[i],
+                         reduction = "wnn.umap",
+                         order = TRUE)
+ggsave(paste0("output/figures/NKG7_Expression/WNN_UMAP_",  cytotoxic.markers[i], "_Expression.pdf"))
+rm(temp.plot)
+
+}
+
+
+
+```
+
+### NKG7 expression vln plots
+```{r Vln_NKG7_expression}
+
+if(!dir.exists("output/figures/NKG7_Expression")){
+  dir.create("output/figures/NKG7_Expression", 
+             recursive = T)}
+
+
+# Set up dataset
+DefaultAssay(reference) <- "SCT"
+reference # 20,957 genes and 161,764 cells 
+
+Idents(reference) <- reference@meta.data$celltype.l1
+
+
+VlnPlot(reference, 
+        feature = "NKG7",
+        pt.size = 0, 
+        group.by = "celltype.l2",
+        sort = "increasing",
+        log = FALSE) + NoLegend()
+
+dev.copy(pdf, "output/figures/NKG7_Expression/VlnPlot_NKG7_Expression_cell_subsets_L2.pdf")
+dev.off()
+
+
+```
+ 
+ 
+### Scatter plot of correlation 
+```{r correlation_scatters}
+
+
+if(!dir.exists("output/figures/Correlation_scatters")){
+  dir.create("output/figures/Correlation_scatters", 
+             recursive = T)}
+
+
+
+
+reference <- AddModuleScore(reference,
+               features = list(cytotoxic.markers),
+               name = "Cytotoxicity")
+
+reference@meta.data$Cytotoxicity1
+
+
+VlnPlot(reference, 
+        feature = "Cytotoxicity1",
+        pt.size = 0, 
+        group.by = "celltype.l2",
+        sort = "increasing",
+        log = FALSE) + NoLegend()
+
+
+
+
+avg.seurat <- AverageExpression(reference, 
+                                group.by = "celltype.l2",
+                                return.seurat = TRUE)
+
+
+avg.seurat <- AddModuleScore(avg.seurat,
+                             features = list(cytotoxic.markers),
+                             name = "Cytotoxicity")
+
+
+
+FeatureScatter(avg.seurat, 
+               feature1 = "Cytotoxicity1",
+               feature2 = "NKG7",
+               pt.size = 3,
+               span = TRUE)
+
+dev.copy(pdf, "output/figures/Correlation_scatters/NKG7_Expression_vs_cytotoxicity_score.pdf")
+dev.off()
+
+
+
+
+avg.seurat <- AddModuleScore(avg.seurat,
+                             features = list(c("GNLY", "PRF1", "GZMA", "GZMK", "GZMM", "GZMH")),
+                             name = "Cytotoxicity_No_GZMB")
+
+
+
+FeatureScatter(avg.seurat, 
+               feature1 = "Cytotoxicity_No_GZMB1",
+               feature2 = "GZMB",
+               pt.size = 3,
+               span = TRUE)
+
+dev.copy(pdf, "output/figures/Correlation_scatters/GZMB_Expression_vs_cytotoxicity_score.pdf")
+dev.off()
+
+
+
+avg.seurat <- AddModuleScore(avg.seurat,
+                             features = list(c("GNLY", "GZMB", "GZMA", "GZMK", "GZMM", "GZMH")),
+                             name = "Cytotoxicity_No_Prf")
+
+
+
+FeatureScatter(avg.seurat, 
+               feature1 = "Cytotoxicity_No_Prf1",
+               feature2 = "PRF1",
+               pt.size = 3,
+               span = TRUE)
+
+dev.copy(pdf, "output/figures/Correlation_scatters/PRF1_Expression_vs_cytotoxicity_score.pdf")
+dev.off()
+
+
+
+
+# Immune reponse signature 
+
+#Immune.response.sig <- read.delim("Data/GO 0006955_Immune Response_Signature.txt")
+
+#Immune.response.sig <- Immune.response.sig$Gene.product..bioentity_label.
+#Immune.response.sig <- unique(Immune.response.sig)
+
+
+
+
+
+#avg.seurat <- AddModuleScore(avg.seurat,
+#                             features = list(Immune.response.sig),
+#                             name = "Immune_Response", 
+#                             search = TRUE)
+
+
+
+#FeatureScatter(avg.seurat, 
+  #             feature1 = "Immune_Response1",
+   #            feature2 = "GZMB",
+  #             pt.size = 3,
+  #             span = TRUE)
+
+#dev.copy(pdf, "output/figures/NKG7_Expression_celltype/PRF1_Expression_vs_cytotoxicity_score.pdf")
+#dev.off()
+
+
+
+
+
+
+
+```
+
+
+
+
+### Correlation analysis - All cells
+```{r correlation_analysis_All_Cells}
+
+
+# Set up dataset
+DefaultAssay(reference) <- "SCT"
+reference # 20,957 genes and 161,764 cells 
+
+
+# dataset is very large, downsample for correlation analysis 
+
+length(unique(reference@meta.data$celltype.l2)) # 31 cell type annotations
+
+Idents(reference) <- reference@meta.data$celltype.l2
+
+downsampled.seurat <- subset(reference, 
+                             downsample = 1500)
+
+normed.data <- as.matrix(downsampled.seurat@assays$SCT@data)
+
+
+
+cor.df <- sc.correlation(normed.data, 
+                           goi = "NKG7", 
+                           remove.quantile = 0.3,
+                           output.tables = "output/tables/Correlation_analysis")
+
+
+
+################################
+# Heatmap of top correlations
+################################
+DefaultAssay(downsampled.seurat) <- "SCT"
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l2
+
+small.seurat <- subset(downsampled.seurat, 
+                       downsample = 100)
+
+small.seurat <- ScaleData(small.seurat)
+
+correlation.heatmaps(small.seurat, 
+                     correlation.df = cor.df, 
+                     up.n = 40, # number of up regulated genes to show
+                     dn.n = 20, # number of downregulated genes to show
+                     goi = "NKG7", 
+                     output.figures = "output/figures/Correlation_analysis")
+
+```
+ 
+ 
+ ### Correlation analysis - NK cells
+```{r correlation_analysis_NK_cells}
+
+# Set up dataset
+DefaultAssay(reference) <- "SCT"
+reference # 20,957 genes and 161,764 cells 
+
+
+# subset dataset for just NK cells
+unique(reference@meta.data$celltype.l1)
+
+Idents(reference) <- reference@meta.data$celltype.l1
+
+downsampled.seurat <- subset(reference, 
+                             idents = "NK")
+
+length(unique(downsampled.seurat@meta.data$celltype.l3)) # 6 cell type annotations
+downsampled.seurat # 18,664 cells in total
+
+# reset idents
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+
+normed.data <- as.matrix(downsampled.seurat@assays$SCT@data)
+
+
+
+cor.df.NK <- sc.correlation(normed.data, 
+                           goi = "NKG7", 
+                           remove.quantile = 0.3,
+                           output.tables = "output/tables/Correlation_analysis_NK")
+
+
+
+################################
+# Heatmap of top correlations
+################################
+DefaultAssay(downsampled.seurat) <- "SCT"
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+small.seurat <- subset(downsampled.seurat, 
+                       downsample = 100)
+
+small.seurat <- ScaleData(small.seurat)
+
+correlation.heatmaps(small.seurat, 
+                     correlation.df = cor.df.NK, 
+                     up.n = 40, # number of up regulated genes to show
+                     dn.n = 20, # number of downregulated genes to show
+                     goi = "NKG7", 
+                     output.figures = "output/figures/Correlation_analysis_NK")
+
+```
+ 
+ 
+ 
+  ### Correlation analysis - CD8 T cells
+```{r correlation_analysis_CD8_T_cells}
+
+
+# Set up dataset
+DefaultAssay(reference) <- "SCT"
+reference # 20,957 genes and 161,764 cells 
+
+
+# subset dataset for just NK cells
+unique(reference@meta.data$celltype.l1)
+
+Idents(reference) <- reference@meta.data$celltype.l1
+
+downsampled.seurat <- subset(reference, 
+                             idents = "CD8 T")
+
+length(unique(downsampled.seurat@meta.data$celltype.l3)) # 12 cell type annotations
+downsampled.seurat # 25,469 cells in total
+
+# reset idents
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+
+normed.data <- as.matrix(downsampled.seurat@assays$SCT@data)
+
+
+
+cor.df.CD8 <- sc.correlation(normed.data, 
+                             goi = "NKG7", 
+                             remove.quantile = 0.3,
+                             output.tables = "output/tables/Correlation_analysis_CD8")
+
+
+
+################################
+# Heatmap of top correlations
+################################
+
+DefaultAssay(downsampled.seurat) <- "SCT"
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+small.seurat <- subset(downsampled.seurat, 
+                       downsample = 100)
+
+small.seurat <- ScaleData(small.seurat)
+
+
+correlation.heatmaps(small.seurat, 
+                     correlation.df = cor.df.CD8, 
+                     up.n = 40, # number of up regulated genes to show
+                     dn.n = 20, # number of downregulated genes to show
+                     goi = "NKG7", 
+                     output.figures = "output/figures/Correlation_analysis_CD8")
+
+
+```
+
+
+
+ ### Correlation analysis - CD4 T cells
+```{r correlation_analysis_CD4_cells}
+
+# Set up dataset
+DefaultAssay(reference) <- "SCT"
+reference # 20,957 genes and 161,764 cells 
+
+
+# subset dataset for just NK cells
+unique(reference@meta.data$celltype.l1)
+
+Idents(reference) <- reference@meta.data$celltype.l1
+
+downsampled.seurat <- subset(reference, 
+                             idents = "CD4 T")
+
+length(unique(downsampled.seurat@meta.data$celltype.l3)) # 12 cell type annotations
+downsampled.seurat # 41,001 cells in total
+
+# reset idents
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+
+normed.data <- as.matrix(downsampled.seurat@assays$SCT@data)
+
+
+
+cor.df.CD4 <- sc.correlation(normed.data, 
+                           goi = "NKG7", 
+                           remove.quantile = 0.3,
+                           output.tables = "output/tables/Correlation_analysis_CD4")
+
+
+
+################################
+# Heatmap of top correlations
+################################
+DefaultAssay(downsampled.seurat) <- "SCT"
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+small.seurat <- subset(downsampled.seurat, 
+                       downsample = 100)
+
+small.seurat <- ScaleData(small.seurat)
+
+correlation.heatmaps(small.seurat, 
+                     correlation.df = cor.df.CD4, 
+                     up.n = 40, # number of up regulated genes to show
+                     dn.n = 20, # number of downregulated genes to show
+                     goi = "NKG7", 
+                     output.figures = "output/figures/Correlation_analysis_CD4")
+
+```
+ 
+ 
+
+```{r}
+
+
+
+
+
+
+up.genes <- cor.df.CD8 %>%
+  dplyr::filter(FDR < 0.05) %>%
+  dplyr::top_n(20, Cor.val) %>% 
+  dplyr::pull(GeneID)
+
+up.genes <- unique(c("NKG7", up.genes))
+
+
+DoHeatmap(small.seurat, 
+          features = up.genes, 
+          angle = 90,
+          size = 3,
+          raster = FALSE)
+
+dev.copy(pdf, "output/figures/Correlation_analysis_CD8/Heatmap_CD8_top20_corr_genes.pdf")
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Seurat::FeatureScatter(downsampled.seurat, 
+                       feature1 = "NKG7", 
+                       feature2 = "CD8", 
+                       smooth = FALSE, 
+                       plot.cor = TRUE, 
+                       span = TRUE, 
+                       raster = TRUE)
+
+
+rownames(downsampled.seurat@assays$ADT)
+
+
+#
+
+
+
+
+
+
+
+
+
+
+# Sort by NKG7 expression 
+temp.df <- small.seurat@assays$SCT@data
+cell.use <- colnames(small.seurat@assays$SCT@data)[order(temp.df["NKG7", ])]
+
+# Set idents
+Idents(small.seurat) <- small.seurat@meta.data$celltype.l2
+small.seurat@meta.data$orig.ident
+
+
+# Positively correlated genes
+DoHeatmap(small.seurat, 
+          cells = cell.use,
+          features = up.genes,
+          group.by = "donor",
+          raster = FALSE)
+
+dev.copy(pdf, "output/figures/Correlation_analysis/Heatmap_All_cells_top_positively_correlated.pdf")
+dev.off()
+
+
+dn.genes <- cor.df.CD8 %>%
+  dplyr::filter(FDR < 0.05) %>%
+  dplyr::top_n(-40, Cor.val) %>% 
+  dplyr::pull(GeneID)
+
+dn.genes <- unique(c("NKG7", dn.genes))
+
+# Neg correlated genes
+DoHeatmap(small.seurat, 
+          #cells = cell.use,
+          features = dn.genes, 
+          #group.by = "donor",
+          raster = FALSE)
+
+dev.copy(pdf, "output/figures/Correlation_analysis_CD8/Heatmap_CD8_top_Neg_correlated.pdf")
+dev.off()
+
+
+```
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+### Boolean cytotoxicity expression
+```{r Boolean_Cytotoxicity}
+
+
+if(!dir.exists("output/figures/Vln_cytotoxicity")){
+  dir.create("output/figures/Vln_cytotoxicity", 
+             recursive = T)}
+
+
+
+# Using boolean logic to define cells as single or multiple positive for cytotoxic molecules 
+DefaultAssay(reference) <- "SCT"
+Idents(reference) <- reference@meta.data$celltype.l2
+
+# Markers
+cytotoxic.markers <- c("GNLY", "PRF1", "GZMA", "GZMB", "GZMK", "GZMM", "GZMH") 
+
+for(i in seq_along(cytotoxic.markers)){
+  
+  
+  print(VlnPlot(reference, 
+                feature = cytotoxic.markers[i], 
+                pt.size = 0)
+        + NoLegend())
+  
+  
+  dev.copy(pdf, paste0("output/figures/Vln_cytotoxicity/Vln_", cytotoxic.markers[i], ".pdf"))
+  dev.off()
+  
+}
+
+# Expression level above 0.5 seems to capture positive or negative cells decently 
+
+
+for(i in seq_along(cytotoxic.markers)){
+  
+  
+logic.var <- grep(paste0("^", cytotoxic.markers[i], "$"),
+                  rownames(reference@assays$SCT@data))
+
+expression.vector <- reference@assays$SCT@data[logic.var, ]
+
+expression.logic <- expression.vector > 1
+
+
+reference <- AddMetaData(reference, 
+            metadata = expression.logic, 
+            col.name = paste0(cytotoxic.markers[i], "_Exp"))
+
+}
+
+
+# calculate single, double, triple etc positive cells 
+
+pattern <- paste0(paste0(cytotoxic.markers, "_Exp"), collapse = "|")
+keep.logic <- grepl(pattern, colnames(reference@meta.data))
+
+cytotoxic.meta <- reference@meta.data[, keep.logic]
+
+cytotoxic.boolean <- rowSums(cytotoxic.meta)
+
+
+reference <- AddMetaData(reference, 
+                         metadata = cytotoxic.boolean, 
+                         col.name = "Cytotoxic_Boolean")
+
+# remove all non-cytotoxic cells 
+Idents(reference) <- reference@meta.data$Cytotoxic_Boolean
+summary(reference@meta.data$Cytotoxic_Boolean)
+
+
+n.val <- max(reference@meta.data$Cytotoxic_Boolean)
+cytotoxic.seurat <- subset(reference, idents = c(3:n.val))
+
+
+
+cytotoxic.seurat
+
+DimPlot(object = cytotoxic.seurat, 
+              reduction = "wnn.umap",
+              group.by = "celltype.l3",
+              label = TRUE, 
+              label.size = 3, 
+              repel = TRUE) + 
+  NoLegend()
+
+
+
+
+DimPlot(object = cytotoxic.seurat, 
+              reduction = "wnn.umap",
+              split.by = "Cytotoxic_Boolean",
+              label = TRUE, 
+              label.size = 3, 
+              repel = TRUE) + 
+  NoLegend()
+
+
+
+small.seurat <- subset(reference, downsample = 300)
+small.seurat <- ScaleData(small.seurat)
+
+
+
+DoHeatmap(small.seurat, 
+          group.by = "Cytotoxic_Boolean", 
+          features = c(cytotoxic.markers, "NKG7"))
+
+DefaultAssay(reference) <- "SCT"
+
+
+reference@meta.data$cells <- "ALL_cells"
+
+
+VlnPlot(reference, 
+        feature = "NKG7",
+        group.by = "cells", pt.size = 0)
+
+
+
+
+logic.var <- grep("^NKG7$",
+                  rownames(reference@assays$SCT@data))
+
+expression.vector <- reference@assays$SCT@data[logic.var, ]
+summary(expression.vector)
+
+no.NKG7 <- expression.vector == 0
+dim.NKG7 <- expression.vector > 0 & expression.vector <= 1
+mid.NKG7 <- expression.vector > 1 & expression.vector <= 3
+high.NKG7 <- expression.vector > 3
+
+NKG7.meta <- expression.vector
+NKG7.meta[no.NKG7] <- "No_NKG7"
+NKG7.meta[dim.NKG7] <- "dim_NKG7"
+NKG7.meta[mid.NKG7] <- "mid_NKG7"
+NKG7.meta[high.NKG7] <- "high_NKG7"
+
+unique(NKG7.meta)
+
+
+
+reference <- AddMetaData(reference, 
+            metadata = NKG7.meta, 
+            col.name = "NKG7_stratify")
+
+
+
+
+VlnPlot(reference, 
+        feature = "NKG7",
+        group.by = "NKG7_stratify", pt.size = 0)
+
+
+
+DimPlot(object = reference, 
+              reduction = "wnn.umap",
+              split.by = "NKG7_stratify",
+              label = TRUE, 
+              label.size = 3, 
+              repel = TRUE) + 
+  NoLegend()
+
+
+
+table(reference@meta.data$NKG7_stratify, reference@meta.data$celltype.l2)
+
+
+Idents(reference) <- reference@meta.data$NKG7_stratify
+
+small.seurat <- subset(reference, downsample = 300)
+small.seurat <- ScaleData(small.seurat)
+
+DoHeatmap(small.seurat, 
+          group.by = "NKG7_stratify", 
+          features = c(cytotoxic.markers, "NKG7"))
+
+DefaultAssay(reference) <- "SCT"
+
+
+prop.table(table(reference@meta.data$Cytotoxic_Boolean))*100
+
+
+
+DimPlot(object = reference, 
+              reduction = "wnn.umap",
+        group.by = "celltype.l2",
+              split.by = "Cytotoxic_Boolean",
+              label = TRUE, 
+              label.size = 3, 
+              repel = TRUE) + 
+  NoLegend()
+
+
+
+```
+

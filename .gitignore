@@ -1,0 +1,27 @@
+# R
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+.Ruserdata
+.Rproj.user/
+*.Rcheck/
+*.tar.gz
+renv/library/
+renv/staging/
+renv/local/
+
+# large inputs and intermediates (download from the sources listed in each dataset README)
+data/
+**/Exported_RDS_files/
+*.rds
+*.rda
+*.h5seurat
+*.h5ad
+*.h5
+*.loom
+
+# rendered notebooks
+*.nb.html
+
+.DS_Store

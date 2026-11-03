@@ -1,0 +1,546 @@
+---
+title: "Tabula_Sapeins_dataset_preprocessing"
+author: "Dillon Corvino"
+date: "01/02/2024"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# pipeline variables
+long.compute <- TRUE
+do.plot <- TRUE
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+setwd(here::here())   # project root; works in RStudio, knitr and Rscript
+
+# Create output directories & load custom functions & colour scheme
+source("scripts/Setup.R", local = knitr::knit_global())
+
+
+# Install packages 
+#remotes::install_github("mojaveazure/seurat-object", "seurat5", quiet = FALSE)
+#remotes::install_github("satijalab/seurat", "seurat5", quiet = FALSE)
+#remotes::install_github("satijalab/seurat-data", "seurat5", quiet = FALSE)
+#remotes::install_github("satijalab/seurat-wrappers", "seurat5", quiet = FALSE)
+
+
+#remotes::install_github("stuart-lab/signac", "seurat5", quiet = FALSE)
+#remotes::install_github("satijalab/azimuth", "seurat5", quiet = FALSE)
+#remotes::install_github("bnprks/BPCells", quiet = FALSE)
+
+# load packages
+library(Seurat)
+library(SeuratData)
+library(BPCells)
+library(dplyr)
+
+library(Signac)
+# set seurat to version 5
+#options(Seurat.object.assay.version = "v5")
+#getOption("Seurat.object.assay.version")
+```
+
+
+
+## Loading and formatting dataset {.tabset}
+
+### convert h5ad object to h5seurat object
+```{r convert_dataset}
+
+if(long.compute){
+  
+  # issue converting h5ad object to h5seurat object using seurat functions
+  # therefore use alternative approach using zellkonverter
+  #BiocManager::install("zellkonverter")
+  
+  library("zellkonverter")
+  
+  ad <- readH5AD("data/TS_immune.h5ad")
+  
+  ts.immune.seurat <- as.Seurat(ad, counts = "X", data = NULL)
+  
+  # save object as seurat object
+  SaveH5Seurat(ts.immune.seurat, "data/TS_immune.h5seurat", overwrite = TRUE)
+  
+}
+
+
+```
+
+### Format dataset
+```{r format_dataset}
+
+if(long.compute){
+  
+  
+  output.dir <- "results/QC/"
+  if(!dir.exists(output.dir)){
+    dir.create(output.dir, 
+               recursive = T)}
+  
+  
+  # load dataset
+  ts.immune.seurat <- LoadH5Seurat("data/TS_immune.h5seurat")
+  
+  ts.immune.seurat # 58,870 genes across 264,824 cells
+  
+  ###########################
+  # remove smartseq2 cells
+  ###########################
+  
+  table(ts.immune.seurat@meta.data$method) # 14,863 cells from smartseq2 but most i.e 249,961 are from 10X
+  
+  # umap projection shows a batch difference between 10x and smartseq2
+  
+  DimPlot(ts.immune.seurat, 
+          group.by = "method", 
+          pt.size = 1,
+          label = T,
+          reduction = "X_umap") + NoLegend()
+  
+  dev.copy(pdf, paste0(output.dir, "UMAP_grouped_by_seq_method.pdf"))
+  dev.off()
+  
+  # keep only 10X cells
+  Idents(ts.immune.seurat) <- ts.immune.seurat@meta.data$method
+  ts.immune.seurat <- subset(ts.immune.seurat, idents = "10X")
+  
+  
+  
+  ######################################################
+  # remove donors with only few cells
+  ######################################################
+  
+  table(ts.immune.seurat@meta.data$donor)
+  length(unique(ts.immune.seurat@meta.data$donor)) # 14 donors
+  # donor TSP13 = no cells 
+  # donor TSP3 = 2 cells
+  # donor TSP12 = 48 cells
+  
+  DimPlot(ts.immune.seurat, 
+          group.by = "donor", 
+          pt.size = 1,
+          label = T,
+          reduction = "X_umap") + NoLegend()
+  
+  dev.copy(pdf, paste0(output.dir, "UMAP_grouped_by_donor.pdf"))
+  dev.off()
+  
+  # keep only 10X cells
+  Idents(ts.immune.seurat) <- ts.immune.seurat@meta.data$donor
+  ts.immune.seurat <- subset(ts.immune.seurat, idents = c("TSP3", "TSP12"), invert = TRUE)
+  
+  ts.immune.seurat@meta.data$donor <- droplevels(ts.immune.seurat@meta.data$donor)
+  
+  table(ts.immune.seurat@meta.data$donor)
+  length(unique(ts.immune.seurat@meta.data$donor)) # 12 donors
+  
+    length(unique(ts.immune.seurat@meta.data$organ_tissue)) # 12 donors
+
+  ############################################################
+  # Annotate dataset with cleaner celltype labels
+  ############################################################
+  
+  
+  # Tabula Sapeins annotations are a mess. many are just mis-spelt etc 
+  # exported annotations "free_annotations" and re-formatted into a number of different levels and groups
+  cluster.annotation <- read.csv("data/Tabula_Sapiens_cluster_annotation.csv", sep = ";")
+  cluster.annotation
+  colnames(cluster.annotation)
+  
+  # ensure only columns of interest retained
+  cluster.annotation <- cluster.annotation %>%
+    select(Original, Grouped_l1, Grouped_l2, Grouped_l3, Grouped_l4)
+  
+  # Perform a left join with the Seurat metadata
+  ts.immune.seurat@meta.data$free_annotation <- as.character(ts.immune.seurat@meta.data$free_annotation)
+  ts.immune.seurat@meta.data$organ_tissue <- as.character(ts.immune.seurat@meta.data$organ_tissue)
+  
+  result_join <- left_join(ts.immune.seurat@meta.data, cluster.annotation, by = c("free_annotation" = "Original"))
+  
+  # for some reason parsing the entire metadata to replace seurat metadata causes a format error 
+  # therefore need to parse specific columns to add to metadata 
+  ts.immune.seurat@meta.data$Grouped_l1 <- result_join$Grouped_l1
+  ts.immune.seurat@meta.data$Grouped_l2 <- result_join$Grouped_l2
+  ts.immune.seurat@meta.data$Grouped_l3 <- result_join$Grouped_l3
+  ts.immune.seurat@meta.data$Grouped_l4 <- result_join$Grouped_l4
+  
+  # factorise annotations
+  ts.immune.seurat@meta.data$Grouped_l1 <- as.factor(ts.immune.seurat@meta.data$Grouped_l1)
+  ts.immune.seurat@meta.data$Grouped_l2 <- as.factor(ts.immune.seurat@meta.data$Grouped_l2)
+  ts.immune.seurat@meta.data$Grouped_l3 <- as.factor(ts.immune.seurat@meta.data$Grouped_l3)
+  ts.immune.seurat@meta.data$Grouped_l4 <- as.factor(ts.immune.seurat@meta.data$Grouped_l4)
+  
+  
+  
+  # Clean metadata 
+  head(ts.immune.seurat@meta.data)
+  length(unique(ts.immune.seurat@meta.data$cell_ontology_class)) # 62
+  length(unique(ts.immune.seurat@meta.data$free_annotation)) # 142
+  length(unique(ts.immune.seurat@meta.data$manually_annotated)) # 1
+  length(unique(ts.immune.seurat@meta.data$compartment)) # 1
+  
+  
+  # drop annotation columns 
+  # method, manually_annotated, compartment, free_annotation, cell_ontology_class
+  
+  ts.immune.seurat@meta.data <- ts.immune.seurat@meta.data %>%
+    select(c(orig.ident, nCount_originalexp, nFeature_originalexp, n_counts_UMIs, n_genes, organ_tissue, donor, anatomical_information, gender, Grouped_l1, Grouped_l2, Grouped_l3, Grouped_l4))
+  
+  
+  
+  # save object
+  SaveH5Seurat(ts.immune.seurat, "saves/TS_immune_filtered.h5seurat", overwrite = TRUE)
+  
+  
+}
+```
+
+
+
+
+
+## Normalise & integrate data GEX data
+```{r Normalise_and_integrate_data_GEX}
+
+if(long.compute){
+  
+  # Note, 
+  # I compared CCA integration and rpca integration, looks cca is better fit for this dataset 
+  # also see documentation on cca vs rpca integration, cca more aligns with this dataset 
+  
+  # perform sct and default/standard normalisation before cca integration to compare both normalisation methods 
+  
+  # set default assay 
+  DefaultAssay(ts.immune.seurat) <- "originalexp"
+  
+  # split object up based on sequencing run / in seurat V5 these are splitting the layers
+  ts.immune.seurat[["originalexp"]] <- split(ts.immune.seurat[["originalexp"]],  f = ts.immune.seurat$donor)
+  
+  ts.immune.seurat
+  use.sct <- TRUE
+  
+  
+  if(use.sct){
+    
+    #####################################################
+    # Normalise with scTransform and integrate data
+    #####################################################
+    # note error with more recent version of matrixStats resulting in "useNames = NA is defunct" error. downgrade to matrixStats version 1.1.0 as a workaround
+    # https://github.com/satijalab/seurat/issues/7501#issuecomment-1854571904
+    #remotes::install_version("matrixStats", version="1.1.0") # restart your session and run previous scripts  
+    
+    
+    # note RNA assay is split into run level layers, below script will apply normalisation etc layer-wise
+    
+    # Normalise and scale with SCTransform v2
+    ts.immune.seurat <- SCTransform(ts.immune.seurat, 
+                                    assay = "originalexp",
+                                    method = "glmGamPoi", 
+                                    #vars.to.regress = "percent_mito", 
+                                    vst.flavor = "v2",
+                                    verbose = TRUE) %>%
+      RunPCA(reduction.name = "pca_sct") %>% 
+      RunUMAP(reduction = "pca_sct",
+              dims = 1:30, 
+              reduction.name = "umap.unintegrated.sct")
+    
+    DefaultAssay(ts.immune.seurat) <- "SCT"
+    
+    # integrate layers using cca integration
+    ts.immune.seurat <- IntegrateLayers(object = ts.immune.seurat,
+                                        orig.reduction = "pca_sct",
+                                        new.reduction = "integrated.cca.sct",
+                                        method = CCAIntegration,
+                                        normalization.method = "SCT",
+                                        verbose = F)
+    
+    # find clusters and dim reduction using integrated data
+    ts.immune.seurat <- FindNeighbors(ts.immune.seurat,
+                                      dims = 1:30,
+                                      reduction = "integrated.cca.sct") %>%
+      FindClusters(resolution = 1.5, 
+                   cluster.name = "clusters_cca_sct") %>%
+      RunUMAP(reduction = "integrated.cca.sct",
+              dims = 1:30, 
+              reduction.name = "umap.cca.sct")
+    
+    
+    
+    # save object
+    SaveH5Seurat(ts.immune.seurat, "saves/TS_immune_integrated.h5seurat", overwrite = TRUE)
+    
+    
+  }
+  
+  
+  if(do.plot){
+    
+    # create output dir
+    output.dir <- paste0("results/integration/")
+    
+    if(!dir.exists(output.dir)){
+      dir.create(output.dir, 
+                 recursive = T)
+      
+    }
+    
+    if(use.sct){
+      
+      unintegrated.reduction <- "umap.unintegrated.sct"
+      integrated.reduction <- "umap.cca.sct"
+      title.var <- "SCT"
+    }else{
+      
+      unintegrated.reduction <- "umap.unintegrated"
+      integrated.reduction <- "umap.cca"
+      title.var <- "Standard"
+      
+    }
+    
+    
+    # evaluate integration and dim reduction
+    
+    vars.plot <- c("donor", "organ_tissue", "gender", "anatomical_information", "Grouped_l1", "Grouped_l2", "seurat_clusters")
+    for(i in seq_along(vars.plot)){
+      
+      
+      # remove "." from name
+      name.var <- gsub("\\.", "_", vars.plot[i])
+      
+      before.int <- DimPlot(ts.immune.seurat,
+                            reduction = unintegrated.reduction, 
+                            label = T,
+                            group.by = vars.plot[i]) + NoLegend() + ggtitle(paste0("Unintegrated ", title.var, " Normalisation"))
+      
+      after.int <- DimPlot(ts.immune.seurat,
+                           reduction = integrated.reduction, 
+                           label = T,
+                           group.by = vars.plot[i]) + NoLegend() + ggtitle(paste0("CCA Integration using ", title.var, " Normalisation"))
+      
+      print(before.int | after.int)
+      dev.copy(pdf, paste0(output.dir, "UMAP_before_after_integration", name.var, ".pdf"))
+      dev.off()
+      
+      
+      
+    }
+    
+    
+    
+  }
+  
+}
+
+
+```
+
+
+
+
+### Broad overview of dataset
+```{r dataset_overview}
+
+
+output.dir <- "results/data_overview/"
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)}
+
+
+
+library(ggplot2)
+
+
+head(ts.immune.seurat@meta.data)
+
+
+if(do.plot){
+  
+  vars.plot <- c("donor", "organ_tissue", "gender", "anatomical_information", "Grouped_l1", "Grouped_l2", "Grouped_l3", "Grouped_l4", "seurat_clusters")
+  
+  for(i in seq_along(vars.plot)){
+    
+    print(scCustomize::DimPlot_scCustom(ts.immune.seurat, 
+                                        reduction = "umap.cca.sct", 
+                                        group.by = vars.plot[i], 
+                                        pt.size = 1,
+                                        label = TRUE,
+                                        figure_plot = TRUE)
+    )
+    
+    
+    dev.copy(pdf, paste0(output.dir, "UMAP_integrated_tabula_sapiens_dataset_grouped_by_", vars.plot[i], ".pdf"))
+    dev.off()
+    
+  }
+}
+
+
+################################################
+# plot some distribution statistics 
+################################################
+
+
+# gender distribution
+x <- table(ts.immune.seurat@meta.data$gender)
+y <- x/sum(x)
+y <- y*100
+
+y <- as.data.frame(y)
+
+ggplot(y) +
+  aes(x = Var1, y = Freq, fill = Var1) +
+  geom_col() +
+  scale_fill_hue(direction = 1) +
+  labs(y = "Freq of sequenced cells", x = "Gender") +
+  theme_minimal() +
+  ylim(0, 100)
+
+dev.copy(pdf, paste0(output.dir, "Frequency_of_sequenced_cells_by_Gender.pdf"))
+dev.off()
+
+
+# Donor distribution
+x <- table(ts.immune.seurat@meta.data$donor)
+y <- x/sum(x)
+y <- y*100
+
+y <- as.data.frame(y)
+
+ggplot(y) +
+  aes(x = Var1, y = Freq, fill = Var1) +
+  geom_col() +
+  scale_fill_hue(direction = 1) +
+  labs(y = "Freq of sequenced cells", x = "Donor") +
+  theme_minimal() +
+  ylim(0, 100) + 
+  theme(legend.position = "none")
+
+
+dev.copy(pdf, paste0(output.dir, "Frequency_of_sequenced_cells_by_Donor.pdf"))
+dev.off()
+
+
+# Tissue distribution
+x <- table(ts.immune.seurat@meta.data$organ_tissue)
+y <- x/sum(x)
+y <- y*100
+
+y <- as.data.frame(y)
+
+ggplot(y) +
+  aes(x = Var1, y = Freq, fill = Var1) +
+  geom_col() +
+  scale_fill_hue(direction = 1) +
+  labs(y = "Freq of sequenced cells", x = "Tissue") +
+  theme_minimal() +
+  ylim(0, 25) + 
+  theme(legend.position = "none")
+
+dev.copy(pdf, paste0(output.dir, "Frequency_of_sequenced_cells_by_Tissue.pdf"))
+dev.off()
+
+
+```
+
+
+## Imputation {.tabset}
+
+### Imputate gene expression
+```{r imputation}
+
+if(long.compute){
+  
+  output.dir <- "saves/"
+  if(!dir.exists(output.dir)){
+    dir.create(output.dir, 
+               recursive = T)}
+  
+  
+  # check that genes of interest are in variable genes list 
+  ts.immune.seurat # 38,048 genes across 249,911 cells
+  
+  DefaultAssay(ts.immune.seurat) <- "SCT"
+  
+  
+  var.features <- VariableFeatures(ts.immune.seurat)
+  
+  # are genes of interest in variable genes list \\ this was done specifically for NKG7/cytotoxicity manuscript, ensureing cytotoxicity markers are present in inputed dataset
+  cytotoxicity.markers <- c("GZMA", "GZMB", "GZMH", "GZMK", "GZMM", "GNLY", "PRF1", "NKG7")
+  goi <- c(cytotoxicity.markers, "CTSW", "TIA1")
+  
+  x <- grep(paste0(goi, collapse = "|"), var.features, value = T)
+  print(x)
+  length(x)
+  length(goi)
+  # missing TIA1, add this 
+  length(var.features) #3000
+  var.features <- unique(c(var.features, goi))
+  length(var.features) #3001
+  
+  # now all genes of interest are in variable features
+  
+  ts.immune.seurat <- SeuratWrappers::RunALRA(ts.immune.seurat, 
+                                              genes.use = var.features)
+  
+  # The matrix went from 16.19% nonzero to 49.97% nonzero
+  
+  # Export dataset for easy import
+  SeuratDisk::SaveH5Seurat(ts.immune.seurat, "saves/TS_immune_imputed_with_TIA1.h5Seurat", overwrite = TRUE)
+  
+  DefaultAssay(ts.immune.seurat) <- "SCT"
+  
+}
+
+
+```
+
+
+
+

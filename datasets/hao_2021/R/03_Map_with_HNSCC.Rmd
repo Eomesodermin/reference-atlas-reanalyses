@@ -1,0 +1,300 @@
+---
+title: "Seurat_PBMC_Multimodal_dataset_PreProcessing"
+author: "Dillon Corvino"
+date: "30/03/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# CITEseq reference of 162,000 PBMCs measured with 228 antibodies 
+
+
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+setwd(here::here())   # project root; works in RStudio, knitr and Rscript
+
+# Load packages
+source("R/Load_packages.R", local = knitr::knit_global())
+
+# Create output directories & load custom functions & colour scheme
+source("R/Setup.R", local = knitr::knit_global())
+
+```
+
+### Read and format data
+```{r reading_data}
+
+reference <- LoadH5Seurat("Exported_h5seurat_files/pbmc_multimodal_CD8_cells_only.h5seurat")
+HNSCC.data <- readRDS("Data/HNSCC_seurat.rds")
+
+```
+
+
+### Project onto ref
+```{r project_onto_ref}
+
+DefaultAssay(reference) <- "SCT"
+
+DefaultAssay(HNSCC.data) <- "integrated"
+
+
+# recalculating reference UMAP
+
+DefaultAssay(reference) <- 'SCT'
+reference <- SCTransform(reference, verbose = FALSE, assay = "SCT")
+
+
+reference <- 
+  NormalizeData(reference) %>% 
+  FindVariableFeatures() %>% 
+  ScaleData() %>% 
+  RunPCA()
+
+DefaultAssay(reference) <- 'ADT'
+
+# we will use all ADT features for dimensional reduction
+# we set a dimensional reduction name to avoid overwriting the 
+VariableFeatures(reference) <- rownames(reference[["ADT"]])
+
+reference <- 
+  NormalizeData(reference, 
+               normalization.method = 'CLR', 
+               margin = 2) %>% 
+  ScaleData() %>% 
+  RunPCA(reduction.name = 'apca')
+
+
+# Identify multimodal neighbors. These will be stored in the neighbors slot, 
+# and can be accessed using bm[['weighted.nn']]
+# The WNN graph can be accessed at bm[["wknn"]], 
+# and the SNN graph used for clustering at bm[["wsnn"]]
+# Cell-specific modality weights can be accessed at bm$RNA.weight
+reference <- FindMultiModalNeighbors(reference, 
+                                     reduction.list = list("pca", "apca"), 
+                                     dims.list = list(1:30, 1:18), 
+                                     modality.weight.name = "Multi.weight")
+
+
+reference <- RunSPCA(reference, 
+                     assay = 'SCT',
+                     graph = 'wsnn')
+
+reference <- RunUMAP(reference,
+                     reduction = 'spca', 
+                     dims = 1:50)
+
+
+
+
+#FindClusters(reference, graph.name = "wsnn", algorithm = 3, resolution = 2, verbose = FALSE)
+
+
+
+#reference <- ScaleData(reference, assay = 'SCT')
+
+
+
+reference@meta.data
+
+DimPlot(reference, group.by = "donor", reduction = "umap") 
+DimPlot(reference, group.by = "celltype.l2", reduction = "umap") 
+
+
+
+
+
+
+
+# normalise dataset to match reference 
+HNSCC.data <- SCTransform(HNSCC.data, verbose = FALSE)
+
+HNSCC.data
+
+
+
+
+
+
+
+dataset.anchors <- FindTransferAnchors(reference = reference,
+                                       query = HNSCC.data,
+                                       normalization.method = "SCT",
+                                       reference.reduction = "spca",
+                                       dims = 1:50)
+
+
+
+HNSCC.data <- MapQuery(anchorset = dataset.anchors,
+                       query = HNSCC.data,
+                       reference = reference,
+                       refdata = list(
+                         celltype.l1 = "celltype.l1",
+                         celltype.l2 = "celltype.l2",
+                         celltype.l3 = "celltype.l3",
+                         predicted_ADT = "ADT"
+                       ),
+                       reference.reduction = "spca", 
+                       reduction.model = "umap")#wnn.umap
+
+
+
+
+p1 = DimPlot(HNSCC.data, reduction = "ref.umap", group.by = "predicted.celltype.l2", label = TRUE, label.size = 3, repel = TRUE) + NoLegend()
+p2 = DimPlot(HNSCC.data, reduction = "ref.umap", group.by = "predicted.celltype.l3", label = TRUE, label.size = 3 ,repel = TRUE) + NoLegend()
+p1 + p2
+
+
+
+
+
+
+# Compute new UMAP visualisation
+
+reference$id <- 'reference'
+HNSCC.data$id <- 'query'
+refquery <- merge(reference, HNSCC.data)
+refquery[["spca"]] <- merge(reference[["spca"]], HNSCC.data[["ref.spca"]])
+refquery <- RunUMAP(refquery, reduction = 'spca', dims = 1:50)
+
+DimPlot(refquery, 
+        group.by = 'id', 
+        shuffle = TRUE)
+
+
+
+head(refquery@meta.data)
+
+
+
+DimPlot(refquery, reduction = "umap", group.by = "seurat_clusters", label = TRUE, label.size = 3 ,repel = TRUE) + NoLegend()
+
+DimPlot(refquery, reduction = "umap", group.by = "predicted.celltype.l3", label = TRUE, label.size = 3 ,repel = TRUE) + NoLegend()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+predictions <- TransferData(anchorset = dataset.anchors,
+                            refdata = Bai.seurat$seurat_clusters, 
+                            dims = 1:30)
+
+
+
+Bald.seurat <- AddMetaData(Bald.seurat,
+                              metadata = predictions)
+
+
+
+
+Bai.seurat <- RunUMAP(Bai.seurat, 
+                      dims = 1:30,
+                      reduction = "pca",
+                      return.model = TRUE)
+
+
+Bald.seurat <- MapQuery(anchorset = dataset.anchors,
+                           reference = Bai.seurat,
+                           query = Bald.seurat, 
+                           refdata = list(celltype = "celltype"),
+                           reference.reduction = "pca", 
+                           reduction.model = "umap")
+
+
+
+p1 <- DimPlot(Bai.seurat, 
+              reduction = "umap", 
+              group.by = "celltype",
+              label = TRUE, 
+              label.size = 3, 
+    repel = TRUE) + 
+  NoLegend() + 
+  ggtitle("Reference annotations")
+
+p2 <- DimPlot(Bald.seurat,
+              reduction = "ref.umap", 
+              group.by = "seurat_clusters",
+              label = TRUE, 
+    label.size = 3,
+    repel = TRUE) + 
+  NoLegend() + 
+  ggtitle("Query transferred labels")
+
+
+p1 + p2
+
+Bald.seurat@meta.data
+
+
+
+```
+
+
+### Export seurat object
+```{r export_seurat_RDS}
+
+saveRDS(seurat.combined, file = "Exported_RDS_files/Bai_Bald_integrated_dataset.rds")
+
+
+
+```
+
+

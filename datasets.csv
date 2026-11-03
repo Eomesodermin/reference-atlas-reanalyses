@@ -1,0 +1,4 @@
+folder,citation,doi,species,assay,system,data
+hao_2021,"Hao Y, Hao S, Andersen-Nissen E, et al. Integrated analysis of multimodal single-cell data. *Cell* 2021.",10.1016/j.cell.2021.04.048,Human,"CITE-seq (RNA + 228 surface proteins, ~211k cells)",PBMC,GEO GSE164378; also distributed through SeuratData / Azimuth
+tabula_muris_2018,The Tabula Muris Consortium. Single-cell transcriptomics of 20 mouse organs creates a Tabula Muris. *Nature* 2018.,10.1038/s41586-018-0590-4,Mouse,10x Genomics + Smart-seq2 scRNA-seq,"Multi-organ atlas, immune compartment",GEO GSE109774; also on figshare
+tabula_sapiens_2022,"The Tabula Sapiens Consortium. The Tabula Sapiens: a multiple-organ, single-cell transcriptomic atlas of humans. *Science* 2022.",10.1126/science.abl4896,Human,"10x Genomics + Smart-seq2 scRNA-seq (~500k cells, 24 organs)",Multi-organ atlas,figshare / CELLxGENE Tabula Sapiens portal

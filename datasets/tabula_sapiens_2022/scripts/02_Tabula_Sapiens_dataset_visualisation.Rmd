@@ -1,0 +1,170 @@
+---
+title: "Tabula_Sapeins_dataset_analysis"
+author: "Dillon Corvino"
+date: "04/02/2024"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# pipeline variables
+long.compute <- FALSE
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+setwd(here::here())   # project root; works in RStudio, knitr and Rscript
+
+# Create output directories & load custom functions & colour scheme
+source("scripts/Setup.R", local = knitr::knit_global())
+
+ggplot2_switch_version(desired_version = "3.5.0")
+# need to downgrade to 3.4.4 for nebulosa
+
+```
+
+
+### load dataset
+```{r load_dataset}
+
+#######################
+# load dataset
+#######################
+
+# dataset processed as part of Tabula_Sapiens github repo, filter and normalise and integrate and caclulate umap dims etc all done in that script
+
+ts.immune.seurat <- LoadH5Seurat("saves/TS_immune_imputed.h5Seurat", assays = c("SCT", "alra"))
+
+################################################################################################
+# for easy of use rename the integrattted cca umap in the object to just "umap"
+################################################################################################
+
+new_reduction <- CreateDimReducObject(embeddings = Embeddings(ts.immune.seurat, reduction = "umap.cca.sct"), key = "umap")
+ts.immune.seurat[["umap"]] <- new_reduction
+
+```
+
+## Visualise {.tabset}
+
+
+
+### Broad overview of dataset
+```{r dataset_overview}
+
+
+output.dir <- "results/data_overview/"
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)}
+
+
+
+library(ggplot2)
+
+
+head(ts.immune.seurat@meta.data)
+rownames(ts.immune.seurat)
+
+
+if(do.plot){
+  
+  vars.plot <- c("donor", "organ_tissue", "gender", "anatomical_information", "Grouped_l1", "Grouped_l2", "Grouped_l3", "Grouped_l4", "seurat_clusters")
+  
+  for(i in seq_along(vars.plot)){
+    
+    print(scCustomize::DimPlot_scCustom(ts.immune.seurat, 
+                                        reduction = "umap.cca.sct", 
+                                        group.by = vars.plot[i], 
+                                        pt.size = 1,
+                                        label = TRUE,
+                                        figure_plot = TRUE)
+    )
+    
+    
+    dev.copy(pdf, paste0(output.dir, "UMAP_integrated_tabula_sapiens_dataset_grouped_by_", vars.plot[i], ".pdf"))
+    dev.off()
+    
+  }
+}
+
+
+# Gene lists come from a separate, unpublished ILC analysis (not included).
+# Supply your own celltype_DEGs_sc.csv here to run this section.
+input.dir <- "data/external/gene_lists/"
+
+
+# save to file 
+DEGs.de.sc <- read.csv(paste0(input.dir, "celltype_DEGs_sc.csv"))
+
+# NLC signature
+goi <- DEGs.de.sc %>%
+  dplyr::filter(p_val_adj < 0.05) %>%
+  dplyr::filter(cluster == "NLC") %>%
+  dplyr::filter(avg_log2FC > 1) %>%
+  dplyr::pull(gene)
+
+NLC.sig <- goi
+
+
+#NLC.sig.hs <- usefulfunctions::convert.mouse.to.human(NLC.sig, use.jax = T)
+
+NLC.sig <- toupper(NLC.sig)
+
+
+ts.immune.seurat <- AddModuleScore(ts.immune.seurat, features = list(NLCsig = NLC.sig), search = T, name = "NLCsig")
+
+
+ts.immune.seurat@meta.data
+VlnPlot_scCustom(ts.immune.seurat, features = "NLCsig1", group.by = "Grouped_l4", pt.size = 0) + NoLegend()
+
+head(ts.immune.seurat@meta.data)
+
+```
+
+
+
+
+
+

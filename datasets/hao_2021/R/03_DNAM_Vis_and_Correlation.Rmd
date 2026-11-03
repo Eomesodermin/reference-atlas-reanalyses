@@ -1,0 +1,191 @@
+---
+title: "Visualisation and correlation of DNAM-1 expression"
+author: "Dillon Corvino"
+date: "30/03/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# CITEseq reference of 162,000 PBMCs measured with 228 antibodies 
+
+
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+setwd(here::here())   # project root; works in RStudio, knitr and Rscript
+
+# Load packages
+source("R/Load_packages.R", local = knitr::knit_global())
+
+# Create output directories & load custom functions & colour scheme
+source("R/Setup.R", local = knitr::knit_global())
+
+```
+
+### Read and format data
+```{r reading_data}
+
+reference <- LoadH5Seurat("Data/pbmc_multimodal.h5seurat")
+
+
+```
+
+### Visualising CD226 expression
+```{r Visualising_CD226}
+
+if(!dir.exists("output/figures/CD226_Expression")){
+  dir.create("output/figures/CD226_Expression", 
+             recursive = T)}
+
+
+
+
+
+head(reference@meta.data)
+
+
+
+p1 <- DimPlot(object = reference, 
+              reduction = "wnn.umap",
+              group.by = "celltype.l3",
+              label = TRUE, 
+              label.size = 3, 
+              repel = TRUE) + NoLegend()
+
+p1
+dev.copy(pdf, "output/figures/CD226_Expression/WNN_UMAP_subset_annotation.pdf")
+dev.off()
+
+
+CD226 <- FeaturePlot(reference,
+                    "CD226",
+                    reduction = "wnn.umap",
+                    order = TRUE)
+
+CD226
+dev.copy(pdf, "output/figures/CD226_Expression/WNN_UMAP_NKG7_Expression.pdf")
+dev.off()
+
+p1 + CD226
+
+dev.copy(pdf, "output/figures/CD226_Expression/WNN_UMAP_subset_annotation_and_CD226_Expression.pdf")
+dev.off()
+
+
+Nebulosa::plot_density(reference, 
+                       features = "CD226", 
+                       reduction = "wnn.umap")
+
+dev.copy(pdf, "output/figures/CD226_Expression/WNN_UMAP_CD226_Expression_density.pdf")
+dev.off()
+
+
+```
+
+### Subset by CD4 
+```{r remedy001}
+
+
+
+```
+
+
+
+### Correlation analysis - CD4 T cells
+```{r correlation_analysis_CD4_cells}
+
+# Set up dataset
+DefaultAssay(reference) <- "SCT"
+reference # 20,957 genes and 161,764 cells 
+
+
+# subset dataset for just NK cells
+unique(reference@meta.data$celltype.l1)
+
+Idents(reference) <- reference@meta.data$celltype.l1
+
+downsampled.seurat <- subset(reference, 
+                             idents = "CD4 T")
+
+length(unique(downsampled.seurat@meta.data$celltype.l3)) # 12 cell type annotations
+downsampled.seurat # 41,001 cells in total
+
+# reset idents
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+
+normed.data <- as.matrix(downsampled.seurat@assays$SCT@data)
+
+
+
+cor.df.CD4 <- sc.correlation(normed.data, 
+                           goi = "CD226", 
+                           remove.quantile = 0.3,
+                           output.tables = "output/tables/Correlation_analysis_CD4_DNAM")
+
+
+
+################################
+# Heatmap of top correlations
+################################
+DefaultAssay(downsampled.seurat) <- "SCT"
+Idents(downsampled.seurat) <- downsampled.seurat@meta.data$celltype.l3
+
+small.seurat <- subset(downsampled.seurat, 
+                       downsample = 100)
+
+small.seurat <- ScaleData(small.seurat)
+
+correlation.heatmaps(small.seurat, 
+                     correlation.df = cor.df.CD4, 
+                     up.n = 40, # number of up regulated genes to show
+                     dn.n = 20, # number of downregulated genes to show
+                     goi = "CD226", 
+                     output.figures = "output/figures/Correlation_analysis_CD4_DNAM")
+
+```
+ 
+ 
+
