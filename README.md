@@ -3,6 +3,7 @@
 Reanalyses of three public reference atlases (human PBMC CITE-seq, mouse multi-organ and human multi-organ) used as healthy baselines for NK and T-cell gene expression.
 
 [![parse-check](https://github.com/Eomesodermin/reference-atlas-reanalyses/actions/workflows/parse-check.yaml/badge.svg)](https://github.com/Eomesodermin/reference-atlas-reanalyses/actions/workflows/parse-check.yaml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23975573.svg)](https://doi.org/10.5281/zenodo.23975573)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Datasets
