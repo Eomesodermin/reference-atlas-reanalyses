@@ -14,6 +14,12 @@
 
 Preprocesses and visualises the atlas to examine expression of genes and cell types of interest across organs.
 
+## Key finding
+
+NKG7 and the cytotoxic programme are concentrated in NK and CD8 T cells across human tissues, with tissue-specific granzyme profiles.
+
+*Summarised from the analysis code and plots; see the scripts for the underlying evidence.*
+
 ## Scripts
 
 Run in numeric order from this folder. Each script sets the working directory with `here::here()`, which resolves to this folder via the `.here` marker.

@@ -14,6 +14,12 @@
 
 Preprocesses the immune compartment into a Seurat object for cross-tissue immune comparisons.
 
+## Key finding
+
+Nkg7 and cytotoxic genes are found in NK and T cells across mouse tissues; this analysis mainly provides an integrated immune baseline and batch/composition checks.
+
+*Summarised from the analysis code and plots; see the scripts for the underlying evidence.*
+
 ## Scripts
 
 Run in numeric order from this folder. Each script sets the working directory with `here::here()`, which resolves to this folder via the `.here` marker.

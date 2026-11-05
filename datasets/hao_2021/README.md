@@ -14,6 +14,12 @@
 
 Visualises NKG7 and DNAM/CD226 expression, runs correlation and scTenifoldKnk analyses, and maps onto the HNSCC dataset.
 
+## Key finding
+
+NKG7 is highest in NK cells and effector CD8 and cytotoxic CD4 T cells and correlates with granzymes, perforin, GNLY and CTSW. A virtual NKG7 knock-out (scTenifoldKnk, a network-based prediction from co-expression, not an experiment) is used to ask which genes are most tied to NKG7; CD226 marks cytotoxic CD4 T cells.
+
+*Summarised from the analysis code and plots; see the scripts for the underlying evidence.*
+
 ## Scripts
 
 Run in numeric order from this folder. Each script sets the working directory with `here::here()`, which resolves to this folder via the `.here` marker.
